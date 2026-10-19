@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chat Lokal</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 700px;
+            margin: 30px auto;
+            padding: 16px;
+            background: #f4f5f7;
+        }
+
+        #chat {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        #pesan {
+            height: 350px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 12px;
+            margin: 12px 0;
+        }
+
+        .item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            overflow-wrap: anywhere;
+        }
+
+        img {
+            max-width: 220px;
+            display: block;
+            margin-top: 8px;
+            border-radius: 8px;
+        }
+
+        input,
+        button {
+            padding: 10px;
+            margin: 4px 0;
+            box-sizing: border-box;
+        }
+
+        #teks {
+            width: 72%;
+        }
+
+        button {
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chat">
+        <h2>APA Kntl</h2>
+
+        <div>
+            <label for="nama">Nama pengguna</label>
+            <input id="nama" maxlength="24" placeholder="Masukkan nama">
+            <button id="gabung">Gabung</button>
+        </div>
+
+        <p id="status">Belum bergabung</p>
+        <p>Pengguna online: <span id="online">0</span></p>
+
+        <div id="pesan" aria-live="polite"></div>
+
+        <form id="form">
+            <input id="teks" maxlength="2000" placeholder="Tulis pesan..." disabled>
+            <button id="kirim" disabled>Kirim</button>
+        </form>
+
+        <form id="formGambar">
+            <input type="file" id="gambar" accept="image/jpeg,image/png,image/webp,image/gif" disabled>
+            <button id="unggah" disabled>Kirim gambar</button>
+        </form>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const el = id => document.getElementById(id);
+
+        let nama = "";
+        const tampil = (data) => {
+            const item = document.createElement("div");
+            item.className = "item";
+
+            const judul = document.createElement("strong");
+            judul.textContent = data.nama + ": ";
+            item.appendChild(judul);
+
+            if (data.teks) {
+                item.appendChild(document.createTextNode(data.teks));
+            }
+
+            if (data.gambar) {
+                const img = document.createElement("img");
+                img.src = data.gambar;
+                img.alt = "Gambar dari " + data.nama;
+                img.loading = "lazy";
+                item.appendChild(img);
+            }
+
+            el("pesan").appendChild(item);
+            el("pesan").scrollTop = el("pesan").scrollHeight;
+        };
+
+        el("gabung").onclick = () => {
+            nama = el("nama").value.trim();
+            if (!nama) return alert("Masukkan nama terlebih dahulu.");
+
+            socket.emit("join", nama);
+            el("status").textContent = "Terhubung ke Ruang Umum";
+            ["teks", "kirim", "gambar", "unggah"].forEach(id => {
+                el(id).disabled = false;
+            });
+            el("gabung").disabled = true;
+            el("nama").disabled = true;
+        };
+
+        el("form").onsubmit = e => {
+            e.preventDefault();
+            const teks = el("teks").value.trim();
+            if (!teks) return;
+
+            socket.emit("pesan", teks);
+            el("teks").value = "";
+        };
+
+        el("formGambar").onsubmit = async e => {
+            e.preventDefault();
+
+            const file = el("gambar").files[0];
+            if (!file) return;
+
+            if (file.size > 5 * 1024 * 1024) {
+                return alert("Ukuran gambar maksimal 5 MB.");
+            }
+
+            const data = new FormData();
+            data.append("gambar", file);
+
+            try {
+                const response = await fetch("/upload", {
+                    method: "POST",
+                    body: data
+                });
+
+                const hasil = await response.json();
+                if (!response.ok) throw new Error(hasil.error);
+
+                socket.emit("gambar", hasil.url);
+                el("gambar").value = "";
+            } catch (err) {
+                alert(err.message || "Gagal mengirim gambar.");
+            }
+        };
+
+        socket.on("riwayat", daftar => {
+            el("pesan").replaceChildren();
+            daftar.forEach(tampil);
+        });
+
+        socket.on("pesan-baru", tampil);
+
+        socket.on("online", daftar => {
+            el("online").textContent = daftar.length;
+        });
+
+        socket.on("disconnect", () => {
+            el("status").textContent = "Koneksi terputus";
+        });
+
+        socket.on("connect", () => {
+            if (nama) socket.emit("join", nama);
+        });
+    </script>
+</body>
+
+</html>
